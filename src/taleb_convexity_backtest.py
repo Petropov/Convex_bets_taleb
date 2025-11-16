@@ -97,16 +97,32 @@ def build_qstarts(df: pd.DataFrame, years: int, max_tenor_m: int = 6) -> pd.Date
 
 # ---------------------------
 # Realized vol & vol skew
-# ---------------------------
+# ------------------------
 
 def realized_iv_on(df: pd.DataFrame, date, window_days=21):
     """
     Approximate annualized realized vol using last `window_days` returns up to `date`.
+
+    Robust to edge cases where `date` is before the first index, or where
+    the rolling window has not yet accumulated data.
     """
     col = "SPY"
     rets = df[col].pct_change().fillna(0.0)
+
+    if rets.empty:
+        # fallback: arbitrary default vol if there are no returns at all
+        return 0.20
+
     iv_series = rets.rolling(window_days).std().fillna(rets.std()) * np.sqrt(252)
-    return float(iv_series.loc[:date].iloc[-1])
+
+    # restrict to data up to `date`
+    iv_up_to = iv_series.loc[:date]
+
+    if iv_up_to.empty:
+        # if nothing before `date`, fallback to first available value
+        return float(iv_series.iloc[0])
+
+    return float(iv_up_to.iloc[-1])
 
 
 def skewed_vol(iv_base, otm: float):
@@ -120,6 +136,61 @@ def skewed_vol(iv_base, otm: float):
     else:
         mult = 1.3 + (1.8 - 1.3) * (otm - 0.10) / (0.25 - 0.10)
     return iv_base * mult
+
+def simulate_taleb_world(index: pd.DatetimeIndex, start_price: float = 100.0, seed: int = 42) -> pd.DataFrame:
+    """
+    Simulate a synthetic 'Taleb world' price series on the given date index.
+
+    - Regime 0 (calm): low vol, t(5) noise
+    - Regime 1 (crisis): high vol, t(3) noise + occasional big negative jumps
+    - Simple Markov switching so crises cluster.
+
+    Returns a DataFrame with one column 'SPY' to be compatible with existing code.
+    """
+    rng = np.random.default_rng(seed)
+    n = len(index)
+
+    # Regime parameters
+    vol_calm = 0.01    # 1% daily vol
+    vol_crisis = 0.04  # 4% daily vol
+    df_calm = 5
+    df_crisis = 3
+
+    # Markov regime: 0 = calm, 1 = crisis
+    regime = np.zeros(n, dtype=int)
+    for t in range(1, n):
+        if regime[t-1] == 0:
+            # from calm: mostly stay calm, small chance crisis
+            regime[t] = 1 if rng.random() < 0.03 else 0
+        else:
+            # from crisis: mostly stay crisis, some chance revert
+            regime[t] = 1 if rng.random() < 0.90 else 0
+
+    rets = np.zeros(n)
+    for t in range(n):
+        if regime[t] == 0:
+            # calm: small t noise
+            z = rng.standard_t(df=df_calm)
+            rets[t] = vol_calm * z / np.sqrt(df_calm / (df_calm - 2))
+        else:
+            # crisis: bigger t noise
+            z = rng.standard_t(df=df_crisis)
+            base = vol_crisis * z / np.sqrt(df_crisis / (df_crisis - 2))
+            # occasional big crash jump
+            if rng.random() < 0.10:
+                jump = -0.15  # -15%
+            else:
+                jump = 0.0
+            rets[t] = base + jump
+
+    prices = np.empty(n)
+    prices[0] = start_price
+    for t in range(1, n):
+        prices[t] = prices[t-1] * (1.0 + rets[t])
+
+    df_syn = pd.DataFrame({"SPY": prices}, index=index)
+    return df_syn
+
 
 # ---------------------------
 # Layers: L0 and L1
@@ -305,71 +376,153 @@ def main():
     if raw_spy.empty:
         raise RuntimeError("Download failed for SPY.")
 
-    # Ensure we always extract a clean Series
+    # Robust extraction of Close as a Series
     if "Close" in raw_spy.columns:
-      spy_close = raw_spy["Close"]
+        spy_close = raw_spy["Close"]
     elif ("SPY", "Close") in raw_spy.columns:
-      spy_close = raw_spy["SPY"]["Close"]
+        spy_close = raw_spy["SPY"]["Close"]
     else:
-      raise RuntimeError(f"SPY Close column not found. Columns returned: {raw_spy.columns}")
+        raise RuntimeError(f"SPY Close column not found. Columns returned: {raw_spy.columns}")
 
-    # Make sure it's a Series
     spy_close = spy_close.squeeze()
-
-    # Force index to datetime
     spy_close.index = pd.to_datetime(spy_close.index)
-
-    # Name the Series and convert to DataFrame
     spy_close.name = "SPY"
     df_prices = spy_close.to_frame()
 
     print(f"Got {len(df_prices)} daily prices from {df_prices.index.min().date()} to {df_prices.index.max().date()}.")
 
-    # 2) Build quarter starts
-    qstarts = build_qstarts(df_prices, YEARS, max_tenor_m=MAX_TENOR_M)
-    print(f"Quarter starts: {len(qstarts)} from {qstarts.min().date()} to {qstarts.max().date()}")
+    # 2) Build quarter starts for SPY
+    qstarts_spy = build_qstarts(df_prices, YEARS, max_tenor_m=MAX_TENOR_M)
+    print(f"SPY quarter starts: {len(qstarts_spy)} from {qstarts_spy.min().date()} to {qstarts_spy.max().date()}")
 
-    # 3) Run all layers
+    # 3) Run layers on SPY
 
-    # L0
-    summary_L0, df_L0 = layer0_naive_put(df_prices, qstarts)
-    df_L0.to_csv("L0_trades.csv", index=False)
+    # L0 - SPY
+    summary_L0_spy, df_L0_spy = layer0_naive_put(df_prices, qstarts_spy)
+    df_L0_spy.to_csv("L0_trades_spy.csv", index=False)
 
-    # L1
-    summary_L1_df = layer1_strike_ladder(df_prices, qstarts)
-    # combine L1 strikes as aggregate
-    summary_L1 = {
+    # L1 - SPY
+    summary_L1_spy_df = layer1_strike_ladder(df_prices, qstarts_spy)
+    summary_L1_spy = {
         "Layer": "L1_strikes_all",
-        "Total_Spent": summary_L1_df["Total_Spent"].sum(),
-        "Total_Payout": summary_L1_df["Total_Payout"].sum(),
+        "Total_Spent": summary_L1_spy_df["Total_Spent"].sum(),
+        "Total_Payout": summary_L1_spy_df["Total_Payout"].sum(),
     }
-    summary_L1["Net_PnL"] = summary_L1["Total_Payout"] - summary_L1["Total_Spent"]
-    summary_L1["Payoff_Ratio"] = (
-        summary_L1["Total_Payout"] / summary_L1["Total_Spent"] if summary_L1["Total_Spent"] > 0 else np.nan
+    summary_L1_spy["Net_PnL"] = summary_L1_spy["Total_Payout"] - summary_L1_spy["Total_Spent"]
+    summary_L1_spy["Payoff_Ratio"] = (
+        summary_L1_spy["Total_Payout"] / summary_L1_spy["Total_Spent"]
+        if summary_L1_spy["Total_Spent"] > 0 else np.nan
     )
-    summary_L1["WinRate"] = summary_L1_df["WinRate"].mean()
+    summary_L1_spy["WinRate"] = summary_L1_spy_df["WinRate"].mean()
 
-    # L2
-    summary_L2 = layer2_strike_tenor_ladder(df_prices, qstarts)
+    # L2 - SPY
+    summary_L2_spy = layer2_strike_tenor_ladder(df_prices, qstarts_spy)
 
-    # L3
-    summary_L3 = layer3_vol_and_tp(df_prices, qstarts, tp_mult=3.0)
+    # L3 - SPY
+    summary_L3_spy = layer3_vol_and_tp(df_prices, qstarts_spy, tp_mult=3.0)
 
-    summary_layers = pd.DataFrame([
-        summary_L0,
-        summary_L1,
-        summary_L2,
-        summary_L3,
+    summary_layers_spy = pd.DataFrame([
+        summary_L0_spy,
+        summary_L1_spy,
+        summary_L2_spy,
+        summary_L3_spy,
     ])[["Layer", "Total_Spent", "Total_Payout", "Net_PnL", "Payoff_Ratio", "WinRate"]]
 
-    print("\n=== Layer Summary ===")
-    print(summary_layers.to_string(index=False))
+    summary_layers_spy.to_csv("layer_summary_spy.csv", index=False)
 
-    summary_layers.to_csv("layer_summary.csv", index=False)
+    # 4) Simulate synthetic Taleb world using same date index
+    print("\nSimulating synthetic Taleb world...")
+    start_price_syn = float(df_prices["SPY"].iloc[0])
+    df_syn = simulate_taleb_world(df_prices.index, start_price=start_price_syn, seed=123)
+
+    # Quarter starts for synthetic
+    qstarts_syn = build_qstarts(df_syn, YEARS, max_tenor_m=MAX_TENOR_M)
+    print(f"SYNTH quarter starts: {len(qstarts_syn)} from {qstarts_syn.min().date()} to {qstarts_syn.max().date()}")
+
+    # 5) Run layers on synthetic world
+
+    # L0 - SYN
+    summary_L0_syn, df_L0_syn = layer0_naive_put(df_syn, qstarts_syn)
+    df_L0_syn.to_csv("L0_trades_synth.csv", index=False)
+
+    # L1 - SYN
+    summary_L1_syn_df = layer1_strike_ladder(df_syn, qstarts_syn)
+    summary_L1_syn = {
+        "Layer": "L1_strikes_all",
+        "Total_Spent": summary_L1_syn_df["Total_Spent"].sum(),
+        "Total_Payout": summary_L1_syn_df["Total_Payout"].sum(),
+    }
+    summary_L1_syn["Net_PnL"] = summary_L1_syn["Total_Payout"] - summary_L1_syn["Total_Spent"]
+    summary_L1_syn["Payoff_Ratio"] = (
+        summary_L1_syn["Total_Payout"] / summary_L1_syn["Total_Spent"]
+        if summary_L1_syn["Total_Spent"] > 0 else np.nan
+    )
+    summary_L1_syn["WinRate"] = summary_L1_syn_df["WinRate"].mean()
+
+    # L2 - SYN
+    summary_L2_syn = layer2_strike_tenor_ladder(df_syn, qstarts_syn)
+
+    # L3 - SYN
+    summary_L3_syn = layer3_vol_and_tp(df_syn, qstarts_syn, tp_mult=3.0)
+
+    summary_layers_syn = pd.DataFrame([
+        summary_L0_syn,
+        summary_L1_syn,
+        summary_L2_syn,
+        summary_L3_syn,
+    ])[["Layer", "Total_Spent", "Total_Payout", "Net_PnL", "Payoff_Ratio", "WinRate"]]
+
+    summary_layers_syn.to_csv("layer_summary_synth.csv", index=False)
+
+    # 6) Print summaries
+
+    print("\n=== Layer Summary: SPY (Historical) ===")
+    print(summary_layers_spy.to_string(index=False))
+
+    print("\n=== Layer Summary: Synthetic Taleb World ===")
+    print(summary_layers_syn.to_string(index=False))
+
+    # 7) Write HTML recap
+    now = pd.Timestamp.today()
+    html = f"""
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Taleb-Style Convexity Backtest Report</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 20px; }}
+        h1, h2 {{ color: #333; }}
+        table {{ border-collapse: collapse; margin-bottom: 30px; }}
+        th, td {{ border: 1px solid #ccc; padding: 6px 10px; text-align: right; }}
+        th {{ background-color: #f2f2f2; }}
+        td:first-child, th:first-child {{ text-align: left; }}
+        .universe-title {{ margin-top: 30px; }}
+    </style>
+</head>
+<body>
+    <h1>Taleb-Style Convexity Backtest</h1>
+    <p>Generated: {now}</p>
+
+    <h2 class="universe-title">SPY (Historical Market)</h2>
+    {summary_layers_spy.to_html(index=False, float_format=lambda x: f"{x:0.3f}")}
+
+    <h2 class="universe-title">Synthetic Taleb World (Fat-Tailed, Regime-Switching)</h2>
+    {summary_layers_syn.to_html(index=False, float_format=lambda x: f"{x:0.3f}")}
+
+    <p>Note: Synthetic world intentionally has clustered crises and fatter tails than SPY, to illustrate convexity behaviour in a true Taleb-style environment.</p>
+</body>
+</html>
+    """
+
+    with open("convexity_report.html", "w", encoding="utf-8") as f:
+        f.write(html)
+
     print("\nSaved:")
-    print("  - L0_trades.csv")
-    print("  - layer_summary.csv")
-
+    print("  - L0_trades_spy.csv")
+    print("  - L0_trades_synth.csv")
+    print("  - layer_summary_spy.csv")
+    print("  - layer_summary_synth.csv")
+    print("  - convexity_report.html")
 
 if __name__ == "__main__":
     main()
