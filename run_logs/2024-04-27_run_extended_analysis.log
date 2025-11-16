@@ -1,0 +1,14 @@
+Command: python src/run_extended_analysis.py
+Date: 2024-04-27
+Notes: Script executed in CI container to regenerate full_convexity_report.html.
+
+Key output:
+Using bundled sample SPY history (offline fallback).
+[Option 1] Running multi-asset portfolio with SPY hedge...
+[Option 4] Running Monte Carlo (50 paths per world)...
+[Option 6] Parameter sweep on branching synthetic world...
+Extended analysis complete. Files written:
+  - mc_paths_L3.csv
+  - sweep_results.csv
+  - full_convexity_report.html
+  - extended_report.html
