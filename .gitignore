@@ -19,3 +19,10 @@ layer_summary.csv
 
 # OS
 .DS_Store
+
+# Output artifacts
+*.csv
+*.html
+*.ipynb
+data/
+
