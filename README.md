@@ -1,5 +1,3 @@
-Absolutely — below is a clean, professional, “investor-ready” README you can paste directly into your `README.md`.
-
 It explains:
 
 * **What the project does**
