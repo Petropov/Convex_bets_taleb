@@ -11,8 +11,9 @@ Layers:
 
 import numpy as np
 import pandas as pd
-import yfinance as yf
 from scipy.stats import norm
+
+from data_utils import load_spy_history
 
 
 # ---------------------------
@@ -369,25 +370,10 @@ def layer3_vol_and_tp(df: pd.DataFrame, qstarts, tp_mult=3.0):
 
 def main():
     # 1) Download SPY
-    print("Downloading SPY prices via yfinance...")
+    print("Loading SPY prices (yfinance or offline fallback)...")
     start_date = (pd.Timestamp.today().normalize() - pd.DateOffset(years=YEARS + 2)).strftime("%Y-%m-%d")
 
-    raw_spy = yf.download("SPY", start=start_date, auto_adjust=True, progress=False)
-    if raw_spy.empty:
-        raise RuntimeError("Download failed for SPY.")
-
-    # Robust extraction of Close as a Series
-    if "Close" in raw_spy.columns:
-        spy_close = raw_spy["Close"]
-    elif ("SPY", "Close") in raw_spy.columns:
-        spy_close = raw_spy["SPY"]["Close"]
-    else:
-        raise RuntimeError(f"SPY Close column not found. Columns returned: {raw_spy.columns}")
-
-    spy_close = spy_close.squeeze()
-    spy_close.index = pd.to_datetime(spy_close.index)
-    spy_close.name = "SPY"
-    df_prices = spy_close.to_frame()
+    df_prices = load_spy_history(start_date)
 
     print(f"Got {len(df_prices)} daily prices from {df_prices.index.min().date()} to {df_prices.index.max().date()}.")
 
