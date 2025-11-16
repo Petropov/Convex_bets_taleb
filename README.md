@@ -289,12 +289,30 @@ python src/run_extended_analysis.py
 
 Outputs:
 
+* `full_convexity_report.html` *(unified narrative with tables **and** charts)*
+* `extended_report.html`
 * `mc_paths_L3.csv`
 * `sweep_results.csv`
-* `extended_report.html`
 * Multi-asset results
 * Monte Carlo summaries
 * Parameter sweep results
+
+### ✅ Regenerate the unified report + confirm embedded charts
+
+After running `python src/run_extended_analysis.py`, the root directory should contain
+`full_convexity_report.html`. Open it in a browser (Chrome/Safari/Brave) to view the
+tables and the two matplotlib charts that are embedded as Base64 images. If you ever
+need to double-check that the images were written into the HTML, run:
+
+```bash
+cd /path/to/Convex_bets_taleb
+grep -n "<img" full_convexity_report.html | cut -c1-160
+```
+
+You should see two `<img src="data:image/png;base64,...">` lines (the second `cut`
+prevents the terminal from printing the entire Base64 payload). If the file is missing,
+simply rerun the script above—the charts are rendered headlessly and embedded directly
+into the HTML, so nothing extra is required.
 
 ---
 
