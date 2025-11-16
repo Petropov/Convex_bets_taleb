@@ -20,12 +20,12 @@ import base64
 from typing import Tuple
 import numpy as np
 import pandas as pd
-import yfinance as yf
 import matplotlib.pyplot as plt
 
 # allow importing from the same src directory
 sys.path.append(os.path.dirname(__file__))
 
+from data_utils import load_multi_asset_history, load_spy_history
 from taleb_convexity_backtest import (  # type: ignore
     simulate_taleb_world,
     layer0_naive_put,
@@ -199,31 +199,6 @@ def build_layer_tables(df_spy: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame
 
 
 # --------------------------------------------------
-# Helper: load multi-asset prices
-# --------------------------------------------------
-
-def load_multi_asset_prices(start_date: str) -> pd.DataFrame:
-    """
-    Download SPY, TLT, GLD adjusted close prices from yfinance and align dates.
-    """
-    tickers = ["SPY", "TLT", "GLD"]
-    df = yf.download(" ".join(tickers), start=start_date, auto_adjust=True, progress=False)
-
-    # yfinance can return multi-index columns; normalize to a simple Close matrix
-    if "Close" in df.columns:
-        df_close = df["Close"].copy()
-    else:
-        # try multiindex: (ticker, 'Close')
-        df_close = df.xs("Close", level=1, axis=1)
-
-    if isinstance(df_close, pd.Series):
-        df_close = df_close.to_frame()
-
-    df_close = df_close.dropna(how="any")
-    return df_close
-
-
-# --------------------------------------------------
 # Option 1: Multi-asset portfolio with SPY hedge
 # --------------------------------------------------
 
@@ -239,7 +214,7 @@ def run_multi_asset_portfolio() -> dict:
 
     start_date = (pd.Timestamp.today().normalize()
                   - pd.DateOffset(years=YEARS + 2)).strftime("%Y-%m-%d")
-    df_assets = load_multi_asset_prices(start_date)
+    df_assets = load_multi_asset_history(start_date)
     df_spy = df_assets[["SPY"]].copy()
 
     # Align horizon like backtest
@@ -735,21 +710,7 @@ def main():
     # Load historical SPY for reference index & also used in sweeps / MC
     start_date = (pd.Timestamp.today().normalize()
                   - pd.DateOffset(years=YEARS + 2)).strftime("%Y-%m-%d")
-    raw_spy = yf.download("SPY", start=start_date, auto_adjust=True, progress=False)
-    if raw_spy.empty:
-        raise RuntimeError("Download failed for SPY.")
-
-    if "Close" in raw_spy.columns:
-        spy_close = raw_spy["Close"]
-    elif ("SPY", "Close") in raw_spy.columns:
-        spy_close = raw_spy["SPY"]["Close"]
-    else:
-        raise RuntimeError(f"SPY Close column not found. Columns returned: {raw_spy.columns}")
-
-    spy_close = spy_close.squeeze()
-    spy_close.index = pd.to_datetime(spy_close.index)
-    spy_close.name = "SPY"
-    df_spy = spy_close.to_frame()
+    df_spy = load_spy_history(start_date)
 
     # Align to YEARS like before
     df_spy = df_spy.loc[df_spy.index.max() - pd.DateOffset(years=YEARS):]

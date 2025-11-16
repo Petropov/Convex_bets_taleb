@@ -13,7 +13,9 @@ venv/
 *.ipynb
 
 # Data / outputs
-data/
+data/*
+!data/
+!data/sample_multi_asset_prices.csv
 L0_trades.csv
 layer_summary.csv
 
@@ -22,7 +24,7 @@ layer_summary.csv
 
 # Output artifacts
 *.csv
+!data/sample_multi_asset_prices.csv
 *.html
 *.ipynb
-data/
 
