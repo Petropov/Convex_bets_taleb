@@ -523,6 +523,7 @@ def write_full_convexity_report(summary_layers_spy: pd.DataFrame,
         }}
     </style>
 </head>
+
 <body>
 
 <h1>Taleb-Style Convexity Simulation Lab</h1>
@@ -628,6 +629,111 @@ This unified report summarizes the Taleb-style convexity lab: how convex strateg
 stress scenarios, multi-asset portfolios, Monte Carlo universes, and across a landscape of parameter choices.
 </small>
 </p>
+
+<hr style="margin:50px 0;"/>
+
+<h2>Limitations, Assumptions, and What This Analysis Is (and Is Not)</h2>
+
+<p class="section-note">
+This simulation is designed to test <b>structural behavior</b>, not to forecast returns or recommend
+a tradable strategy. The results should be read as conditional statements:
+<i>“If the world behaves like this, then convexity behaves like that.”</i>
+</p>
+
+<h3>Key Assumptions Made</h3>
+
+<ul class="section-note">
+  <li>
+    <b>World structure matters more than parameter tuning.</b><br/>
+    The analysis assumes that tail behavior (fat tails, jumps, crisis clustering)
+    is the dominant driver of convexity outcomes, not fine-grained option calibration.
+  </li>
+  <li>
+    <b>Synthetic worlds are stylized, not forecasts.</b><br/>
+    The “Taleb World” is not a prediction of the future; it is a stress environment
+    designed to include features missing from historical samples.
+  </li>
+  <li>
+    <b>Option pricing is approximate.</b><br/>
+    Implied volatility, skew, and take-profit logic are modeled heuristically.
+    Real-world option markets include liquidity effects, bid–ask spreads,
+    margin constraints, and execution frictions not modeled here.
+  </li>
+  <li>
+    <b>Historical SPY is a censored sample.</b><br/>
+    The historical period studied (post-2003) excludes many extreme systemic events
+    and includes heavy policy intervention, which suppresses observed tail risk.
+  </li>
+</ul>
+
+<h3>What This Analysis Does Not Claim</h3>
+
+<ul class="section-note">
+  <li>It does <b>not</b> claim convexity is profitable in all environments.</li>
+  <li>It does <b>not</b> claim historical backtests are sufficient to evaluate tail strategies.</li>
+  <li>It does <b>not</b> claim that any specific parameter set is “optimal.”</li>
+  <li>It does <b>not</b> attempt to predict the timing of crashes.</li>
+</ul>
+
+<p class="section-note">
+Convex strategies are evaluated here as <b>insurance-like structures</b>,
+not as alpha-generating trades. Their role is survival under uncertainty,
+not maximizing average returns.
+</p>
+
+<h2>Next Steps — Focused on the Biggest Unknowns</h2>
+
+<p class="section-note">
+Further exploration should prioritize uncertainty that materially affects real-world outcomes,
+rather than refinements that improve elegance but not insight.
+</p>
+
+<h3>Priority 1 — Calibrate Tail Severity and Clustering</h3>
+<p class="section-note">
+The single most important unknown is <b>how severe and clustered future tail events will be</b>.
+Before refining strategy mechanics, stress-testing should explore:
+</p>
+<ul class="section-note">
+  <li>Higher-frequency crash regimes</li>
+  <li>More extreme jump sizes</li>
+  <li>Longer crisis persistence</li>
+</ul>
+
+<h3>Priority 2 — Portfolio-Level Survival Metrics</h3>
+<p class="section-note">
+Convexity should be evaluated by its impact on <b>portfolio ruin, drawdown, and recovery</b>,
+not by standalone PnL. Key questions:
+</p>
+<ul class="section-note">
+  <li>How does convexity affect maximum drawdown?</li>
+  <li>How does it change recovery time after large losses?</li>
+  <li>Does it prevent permanent capital impairment?</li>
+</ul>
+
+<h3>Priority 3 — Realistic Implementation Frictions</h3>
+<p class="section-note">
+Once tail structure is understood, realism should be increased where it affects outcomes:
+</p>
+<ul class="section-note">
+  <li>Bid–ask spreads and liquidity under stress</li>
+  <li>Margin and capital constraints during crises</li>
+  <li>Execution delays and forced deleveraging</li>
+</ul>
+
+<h3>Lower Priority — Parameter Optimization</h3>
+<p class="section-note">
+Fine-tuning strikes, tenors, or take-profit levels should come <b>after</b>
+tail assumptions are stress-tested. Optimization in the wrong world
+creates false confidence.
+</p>
+
+<p style="margin-top:40px;color:#777;">
+<small>
+Bottom line: the most important uncertainty is not <i>how</i> convexity is implemented,
+but <i>how hostile the future distribution truly is</i>.
+</small>
+</p>
+
 
 </body>
 </html>
