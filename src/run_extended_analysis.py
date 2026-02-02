@@ -827,7 +827,7 @@ def main():
     multi_summary = run_multi_asset_portfolio()
 
     # Option 4: Monte Carlo
-    df_mc = run_mc_on_worlds(df_spy, n_paths=500)
+    df_mc = run_mc_on_worlds(df_spy, n_paths=2000)
     df_mc_summary = summarize_mc(df_mc)
 
     # Option 6: parameter sweep
